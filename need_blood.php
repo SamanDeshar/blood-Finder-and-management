@@ -1,56 +1,42 @@
 <?php
 $active = 'need';
-$active=='donate';
-$active=='contact';
+$active == 'donate';
+$active == 'contact';
 include('conn.php'); // Database connection
 include('head.php'); // Header file for common header content
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-  $blood_group = $_POST['blood'];
-  $recipient_lat = $_POST['latitude'];
-  $recipient_lng = $_POST['longitude'];
-  $max_distance = 50; // Set maximum search radius in km
 
-  // SQL query to find the nearest donors with the same blood group
-  $sql = "SELECT donor_name, donor_number, donor_gender, donor_age, donor_address, blood_group,
-                 (6371 * acos(cos(radians(?)) * cos(radians(donor_details.latitude)) 
-                 * cos(radians(donor_details.longitude) - radians(?)) 
-                 + sin(radians(?)) * sin(radians(donor_details.latitude)))) AS distance
-          FROM donor_details
-          JOIN blood ON donor_details.donor_blood = blood.blood_id
-          WHERE blood.blood_group = ?
-          HAVING distance < ?
-          ORDER BY distance
-          LIMIT 5";
-
-  $stmt = $conn->prepare($sql);
-  $stmt->bind_param("dddsi", $recipient_lat, $recipient_lng, $recipient_lat, $blood_group, $max_distance);
-  $stmt->execute();
-  $result = $stmt->get_result();
-}
 ?>
 
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
   <meta name="description" content="">
   <meta name="author" content="">
-<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
-<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 </head>
+
 <body>
   <div id="page-container" style="margin-top:50px; position: relative; min-height: 84vh;">
     <div class="container">
       <div id="content-wrap" style="padding-bottom:50px;">
         <h1 class="mt-4 mb-3">Need Blood</h1>
-        
+
         <!-- Form to submit blood request -->
-        <form name="needblood" action="" method="post">
+        <form name="needblood" action="send_otp.php" method="post">
           <div class="row">
+            <!-- Email -->
+            <div class="col-lg-4 mb-4">
+              <div class="font-italic">Email<span style="color:red">*</span></div>
+              <div><input type="email" name="email" class="form-control" required>
+              </div>
+            </div>
             <!-- Recipient's Name -->
             <div class="col-lg-4 mb-4">
               <div class="font-italic">Recipient's Name<span style="color:red">*</span></div>
@@ -64,10 +50,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <select name="blood" class="form-control" required>
                   <option value="" selected disabled>Select</option>
                   <?php
-                    $sql = "SELECT * FROM blood";
-                    $result_blood = mysqli_query($conn, $sql) or die("Query unsuccessful.");
-                    while ($row = mysqli_fetch_assoc($result_blood)) {
-                  ?>
+                  $sql = "SELECT * FROM blood";
+                  $result_blood = mysqli_query($conn, $sql) or die("Query unsuccessful.");
+                  while ($row = mysqli_fetch_assoc($result_blood)) {
+                    ?>
                     <option value="<?php echo $row['blood_group']; ?>"><?php echo $row['blood_group']; ?></option>
                   <?php } ?>
                 </select>
@@ -97,9 +83,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
               <div><input type="submit" class="btn btn-primary" value="Submit Request" style="cursor:pointer"></div>
             </div>
           </div>
+
         </form>
 
-       
+        <?php
+        $verified = isset($_GET['verified']) && $_GET['verified'] == 1;
+        ?>
+        <div class="mt-4">
+          <a href="view_details.php?verified=1" class="btn btn-success">View your request Details</a>
+          <?php if ($verified): ?>
+          <?php endif; ?>
+
+        </div>
+
         <script>
           function getLocation() {
             if (navigator.geolocation) {
@@ -115,7 +111,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           }
 
           function showError(error) {
-            switch(error.code) {
+            switch (error.code) {
               case error.PERMISSION_DENIED:
                 alert("User denied the request for Geolocation.");
                 break;
@@ -143,7 +139,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
               <div class="col-lg-4 col-sm-6 portfolio-item">
                 <br>
                 <div class="card" style="width: 300px">
-                  <img class="card-img-top" src="image/blood_drop_logo.jpg" alt="Card image" style="width:100%;height:300px">
+                  <img class="card-img-top" src="image/blood_drop_logo.jpg" alt="Card image"
+                    style="width:100%;height:300px">
                   <div class="card-body">
                     <h3 class="card-title"><?php echo $row['donor_name']; ?></h3>
                     <p class="card-text">
@@ -172,25 +169,26 @@ include('conn.php'); // Database connection
 
 // Process form submission
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $name = mysqli_real_escape_string($conn, $_POST['name']);
-    $blood_group = mysqli_real_escape_string($conn, $_POST['blood']);
-    $address = mysqli_real_escape_string($conn, $_POST['address']);
-    $reason = mysqli_real_escape_string($conn, $_POST['reason']);
-    $latitude = mysqli_real_escape_string($conn, $_POST['latitude']);
-    $longitude = mysqli_real_escape_string($conn, $_POST['longitude']);
+  $name = mysqli_real_escape_string($conn, $_POST['name']);
+  $blood_group = mysqli_real_escape_string($conn, $_POST['blood']);
+  $address = mysqli_real_escape_string($conn, $_POST['address']);
+  $reason = mysqli_real_escape_string($conn, $_POST['reason']);
+  $latitude = mysqli_real_escape_string($conn, $_POST['latitude']);
+  $longitude = mysqli_real_escape_string($conn, $_POST['longitude']);
 
- 
-    // Insert data into `need_blood` table
-    $sql = "INSERT INTO need_blood (name, blood_group, reason, address, latitude, longitude ) 
+
+  // Insert data into `need_blood` table
+  $sql = "INSERT INTO need_blood (name, blood_group, reason, address, latitude, longitude ) 
             VALUES ('$name', '$blood_group', '$reason', '$address', '$latitude', '$longitude')";
 
-    if (mysqli_query($conn, $sql)){
-      
-    } else {
-        header("Location: home.php");
-    }
+  if (mysqli_query($conn, $sql)) {
+
+  } else {
+    header("Location: home.php");
+  }
 }
 
 
 ?>
+
 </html>
