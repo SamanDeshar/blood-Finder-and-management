@@ -2,7 +2,7 @@
 session_start();
 $active = 'need';
 include('conn.php');
-include('head.php'); // your header file
+include('head.php'); 
 
 if (!isset($_SESSION['form_data'])) {
   echo "Session expired or invalid access.";
@@ -13,35 +13,70 @@ $data = $_SESSION['form_data'];
 
 $name = htmlspecialchars($data['name']);
 $email = htmlspecialchars($data['email']);
-$blood_group = $data['blood'];
+$requested_group = $data['blood'];
 $address = htmlspecialchars($data['address']);
 $reason = htmlspecialchars($data['reason']);
 $latitude = $data['latitude'];
 $longitude = $data['longitude'];
 
-// Search for nearest donors
+
+// BLOOD GROUP COMPATIBILITY LOGIC
+
+$compatibility = [
+    "A+"  => ["A+", "A-", "O+", "O-"],
+    "A-"  => ["A-", "O-"],
+    "B+"  => ["B+", "B-", "O+", "O-"],
+    "B-"  => ["B-", "O-"],
+    "AB+" => ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+    "AB-" => ["A-", "B-", "AB-", "O-"],
+    "O+"  => ["O+", "O-"],
+    "O-"  => ["O-"]
+];
+
+$compatibleGroups = $compatibility[$requested_group];
+
 $max_distance = 50;
 
-$sql = "SELECT donor_name, donor_number, donor_gender, donor_age, donor_address, blood_group,
-            (6371 * acos(cos(radians(?)) * cos(radians(donor_details.latitude)) 
-            * cos(radians(donor_details.longitude) - radians(?)) 
-            + sin(radians(?)) * sin(radians(donor_details.latitude)))) AS distance
-        FROM donor_details
-        JOIN blood ON donor_details.donor_blood = blood.blood_id
-        WHERE blood.blood_group = ?
-        HAVING distance < ?
-        ORDER BY distance
-        LIMIT 5";
+// Make placeholders for IN (...)
+$placeholders = implode(',', array_fill(0, count($compatibleGroups), '?'));
+
+// Final SQL (Dynamic Blood Compatibility + Nearest Distance)
+$sql = "
+SELECT donor_name, donor_number, donor_gender, donor_age, donor_address, blood_group,
+    (6371 * acos(cos(radians(?)) * cos(radians(donor_details.latitude)) 
+    * cos(radians(donor_details.longitude) - radians(?)) 
+    + sin(radians(?)) * sin(radians(donor_details.latitude)))) AS distance
+FROM donor_details
+JOIN blood ON donor_details.donor_blood = blood.blood_id
+WHERE blood.blood_group IN ($placeholders)
+HAVING distance < ?
+ORDER BY distance
+LIMIT 5
+";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("dddsi", $latitude, $longitude, $latitude, $blood_group, $max_distance);
+
+
+$types = str_repeat("s", count($compatibleGroups));  
+$types = "ddd" . $types . "i"; //
+
+$params = [$types, $latitude, $longitude, $latitude];
+
+// Append compatible groups into parameter list
+foreach ($compatibleGroups as $bg) {
+    $params[] = $bg;
+}
+
+
+$params[] = $max_distance;
+$stmt->bind_param(...$params);
+
 $stmt->execute();
 $result = $stmt->get_result();
 ?>
 
 <!DOCTYPE html>
 <html>
-
 <head>
   <title>Request Summary</title>
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
@@ -53,28 +88,23 @@ $result = $stmt->get_result();
 </head>
 
 <body>
-  <!-- Header is included by head.php -->
-
   <div class="container mt-5">
-    <!-- Request Summary in Two Columns -->
     <div class="card mb-4 p-4">
       <h4 class="mb-4 text-danger font-weight-bold">Request Summary</h4>
       <div class="row">
-        <!-- Left Column -->
         <div class="col-md-6">
           <p><strong>Name:</strong> <?= $name ?></p>
           <p><strong>Email:</strong> <?= $email ?></p>
-          <p><strong>Blood Group:</strong> <?= $blood_group ?></p>
+          <p><strong>Requested Blood Group:</strong> <?= $requested_group ?></p>
         </div>
 
-        <!-- Right Column -->
         <div class="col-md-6">
           <p><strong>Address:</strong> <?= $address ?></p>
           <p><strong>Reason:</strong> <?= $reason ?></p>
-          <p><strong>Hospital Status:</strong>
-            <?= isset($data['hospital_status']) ? htmlspecialchars($data['hospital_status']) : 'N/A' ?>
-          </p>
-          <p><strong>Donor consent Status:</strong>
+
+          <p><strong>Compatible Groups Used:</strong> <?= implode(", ", $compatibleGroups) ?></p>
+
+          <p><strong>Donor Consent Status:</strong>
             <?= $result->num_rows > 0
               ? '<span class="text-success">Pending</span>'
               : '<span class="text-danger">No Donor Found</span>' ?>
@@ -85,7 +115,7 @@ $result = $stmt->get_result();
 
     <hr>
 
-    <h3>Nearest Donors</h3>
+    <h3>Nearest Compatible Donors</h3>
     <div class="row">
       <?php if ($result->num_rows > 0): ?>
         <?php while ($row = $result->fetch_assoc()): ?>
@@ -106,11 +136,11 @@ $result = $stmt->get_result();
             </div>
           </div>
         <?php endwhile; ?>
+
       <?php else: ?>
-        <p>No donors found within 50 km radius.</p>
+        <p>No compatible donors found within 50 km radius.</p>
       <?php endif; ?>
     </div>
   </div>
 </body>
-
 </html>
